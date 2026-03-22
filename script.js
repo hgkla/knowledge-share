@@ -76,36 +76,70 @@ const elements = {
 
 // 初始化
 async function init() {
+    console.log('应用初始化开始');
     loadGitHubConfig();
     loadFromLocalStorage();
     render();
     setupEventListeners();
 
+    console.log('初始化完成，配置状态:', {
+        token: !!githubConfig.token,
+        owner: githubConfig.owner,
+        repo: githubConfig.repo,
+        branch: githubConfig.branch
+    });
+
     if (isGitHubConfigured()) {
+        console.log('配置完整，开始从 GitHub 加载');
         await loadFromGitHub();
+    } else {
+        console.log('配置不完整，跳过 GitHub 加载');
     }
 }
 
 // 从 localStorage 加载 GitHub 配置
 function loadGitHubConfig() {
     const config = localStorage.getItem('githubConfig');
+    console.log('从 localStorage 读取配置:', config);
     if (config) {
         try {
             githubConfig = JSON.parse(config);
+            console.log('配置加载成功:', {
+                hasToken: !!githubConfig.token,
+                owner: githubConfig.owner,
+                repo: githubConfig.repo,
+                branch: githubConfig.branch
+            });
         } catch (e) {
             console.error('解析 GitHub 配置失败:', e);
         }
+    } else {
+        console.log('localStorage 中没有配置');
     }
 }
 
 // 保存 GitHub 配置到 localStorage
 function saveGitHubConfig() {
-    localStorage.setItem('githubConfig', JSON.stringify(githubConfig));
+    const configStr = JSON.stringify(githubConfig);
+    localStorage.setItem('githubConfig', configStr);
+    console.log('配置已保存到 localStorage:', configStr);
+
+    // 验证保存是否成功
+    const saved = localStorage.getItem('githubConfig');
+    console.log('验证保存结果:', saved === configStr ? '成功' : '失败');
 }
 
 // 检查 GitHub 配置是否完整
 function isGitHubConfigured() {
-    return githubConfig.token && githubConfig.owner && githubConfig.repo;
+    const configured = !!(githubConfig.token && githubConfig.owner && githubConfig.repo);
+    console.log('GitHub 配置检查:', {
+        configured,
+        hasToken: !!githubConfig.token,
+        hasOwner: !!githubConfig.owner,
+        hasRepo: !!githubConfig.repo,
+        branch: githubConfig.branch
+    });
+    return configured;
 }
 
 // 从 localStorage 加载数据
@@ -172,7 +206,9 @@ async function loadFromGitHub() {
 
 // 保存到 GitHub
 async function saveToGitHub() {
+    console.log('点击保存到云端，当前配置:', githubConfig);
     if (!isGitHubConfigured()) {
+        console.log('配置不完整，打开配置模态框');
         openConfigModal();
         showToast('请先配置 GitHub 信息', 'error');
         return;
@@ -468,12 +504,32 @@ function closeConfigModal() {
 function saveConfig(e) {
     e.preventDefault();
 
+    // 获取表单值
+    const tokenValue = elements.configToken.value.trim();
+    const ownerValue = elements.configOwner.value.trim();
+    const repoValue = elements.configRepo.value.trim();
+    const branchValue = elements.configBranch.value.trim() || 'main';
+
+    console.log('表单原始值:', {
+        token: tokenValue ? '***' : '(空)',
+        owner: ownerValue || '(空)',
+        repo: repoValue || '(空)',
+        branch: branchValue
+    });
+
     githubConfig = {
-        token: elements.configToken.value.trim(),
-        owner: elements.configOwner.value.trim(),
-        repo: elements.configRepo.value.trim(),
-        branch: elements.configBranch.value.trim() || 'main'
+        token: tokenValue,
+        owner: ownerValue,
+        repo: repoValue,
+        branch: branchValue
     };
+
+    console.log('保存配置对象:', {
+        hasToken: !!githubConfig.token,
+        owner: githubConfig.owner,
+        repo: githubConfig.repo,
+        branch: githubConfig.branch
+    });
 
     saveGitHubConfig();
     closeConfigModal();
