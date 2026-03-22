@@ -5,5 +5,12 @@
     "role": "admin",
     "status": "approved",
     "createdAt": "2026-03-22T14:01:21.165Z"
+  },
+  {
+    "username": "hello",
+    "passwordHash": "27cc6994fc1c01ce6659c6bddca9b69c4c6a9418065e612c69d110b3f7b11f8a",
+    "role": "user",
+    "status": "pending",
+    "createdAt": "2026-03-22T14:55:10.935Z"
   }
 ]
