@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>知识分享</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- 科技感动态背景 -->
+    <div class="bg-animation">
+        <div class="bg-grid"></div>
+        <div class="bg-particles" id="particles"></div>
+        <div class="bg-glow"></div>
+    </div>
+
+    <div class="app">
+        <header class="header">
+            <div class="header-content">
+                <h1 class="logo">
+                    <span class="logo-icon">◈</span>
+                    <span class="logo-text">知识分享</span>
+                    <span class="logo-cursor">_</span>
+                </h1>
+                <nav class="nav">
+                    <button id="addBtn" class="btn btn-primary">
+                        <span class="icon">+</span> 添加知识
+                    </button>
+                    <button id="saveBtn" class="btn btn-success">
+                        <span class="icon">☁</span> 保存到云端
+                    </button>
+                    <button id="configBtn" class="btn btn-secondary" title="GitHub配置">
+                        <span class="icon">⚙</span> 配置
+                    </button>
+                    <button id="exportBtn" class="btn btn-secondary">
+                        <span class="icon">↓</span> 导出
+                    </button>
+                    <button id="importBtn" class="btn btn-secondary">
+                        <span class="icon">↑</span> 导入
+                    </button>
+                    <input type="file" id="importFile" accept=".json" style="display: none;">
+                </nav>
+            </div>
+            <div class="search-bar">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="searchInput" placeholder="搜索标题、描述或正文..." class="search-input">
+            </div>
+        </header>
+
+        <main class="main">
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <h3>标签分类</h3>
+                </div>
+                <ul id="tagList" class="tag-list">
+                    <li class="tag-item active" data-tag="all">
+                        <span class="tag-name">全部</span>
+                        <span id="allCount" class="tag-count">0</span>
+                    </li>
+                </ul>
+            </aside>
+
+            <section class="content">
+                <div id="knowledgeGrid" class="knowledge-grid">
+                </div>
+                <div id="emptyState" class="empty-state" style="display: none;">
+                    <p>暂无知识卡片</p>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">添加知识</h2>
+                <button class="modal-close" id="modalClose">&times;</button>
+            </div>
+            <form id="knowledgeForm" class="modal-form">
+                <input type="hidden" id="knowledgeId">
+                <div class="form-group">
+                    <label for="titleInput">标题</label>
+                    <input type="text" id="titleInput" required placeholder="请输入标题">
+                </div>
+                <div class="form-group">
+                    <label for="descInput">描述</label>
+                    <textarea id="descInput" required placeholder="请输入简短描述（卡片上显示）" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="contentInput">正文</label>
+                    <textarea id="contentInput" placeholder="请输入详细正文内容（点击卡片查看）" rows="8"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="tagsInput">标签</label>
+                    <input type="text" id="tagsInput" required placeholder="多个标签用逗号分隔，如：编程,JavaScript">
+                </div>
+                <div class="form-actions">
+                    <button type="button" id="cancelBtn" class="btn btn-secondary">取消</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="viewModal" class="modal modal-view">
+        <div class="modal-content view-content">
+            <div class="modal-header">
+                <h2 id="viewTitle">知识详情</h2>
+                <button class="modal-close" id="viewModalClose">&times;</button>
+            </div>
+            <div class="view-body">
+                <div id="viewTags" class="view-tags"></div>
+                <div id="viewContent" class="view-text"></div>
+            </div>
+            <div class="form-actions">
+                <button type="button" id="viewCloseBtn" class="btn btn-secondary">关闭</button>
+                <button type="button" id="viewEditBtn" class="btn btn-primary">编辑</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="confirmModal" class="modal modal-confirm">
+        <div class="modal-content confirm-content">
+            <div class="modal-header">
+                <h2>确认删除</h2>
+            </div>
+            <div class="confirm-body">
+                <p>确定要删除这条知识吗？此操作不可恢复。</p>
+            </div>
+            <div class="form-actions">
+                <button type="button" id="confirmCancel" class="btn btn-secondary">取消</button>
+                <button type="button" id="confirmDelete" class="btn btn-danger">删除</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="loading" class="loading">
+        <div class="loading-spinner"></div>
+        <p>正在同步...</p>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <!-- GitHub 配置模态框 -->
+    <div id="configModal" class="modal modal-config">
+        <div class="modal-content config-content">
+            <div class="modal-header">
+                <h2>GitHub 配置</h2>
+                <button class="modal-close" id="configModalClose">&times;</button>
+            </div>
+            <form id="configForm" class="modal-form">
+                <div class="form-group">
+                    <label for="configToken">Personal Access Token</label>
+                    <input type="password" id="configToken" placeholder="ghp_xxxxxxxxxxxx" autocomplete="off">
+                    <small class="form-hint">Token 仅保存在本地，不会上传到任何地方</small>
+                </div>
+                <div class="form-group">
+                    <label for="configOwner">用户名</label>
+                    <input type="text" id="configOwner" placeholder="GitHub 用户名">
+                </div>
+                <div class="form-group">
+                    <label for="configRepo">仓库名</label>
+                    <input type="text" id="configRepo" placeholder="knowledge-share">
+                </div>
+                <div class="form-group">
+                    <label for="configBranch">分支</label>
+                    <input type="text" id="configBranch" placeholder="main" value="main">
+                </div>
+                <div class="form-actions">
+                    <button type="button" id="configCancel" class="btn btn-secondary">取消</button>
+                    <button type="submit" class="btn btn-primary">保存配置</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

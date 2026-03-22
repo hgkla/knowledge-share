@@ -1,0 +1,43 @@
+[
+  {
+    "id": "1",
+    "title": "JavaScript 闭包",
+    "description": "闭包是指有权访问另一个函数作用域中的变量的函数。",
+    "content": "闭包是指有权访问另一个函数作用域中的变量的函数。创建闭包的常见方式，就是在一个函数内部创建另一个函数。\n\n闭包的特性：\n1. 函数嵌套函数\n2. 内部函数可以引用外部函数的参数和变量\n3. 参数和变量不会被垃圾回收机制回收\n\n应用场景：\n- 数据封装和私有变量\n- 回调函数和事件处理\n- 函数柯里化",
+    "tags": [
+      "编程",
+      "JavaScript"
+    ]
+  },
+  {
+    "id": "2",
+    "title": "React Hooks 使用指南",
+    "description": "Hooks 是 React 16.8 引入的新特性，让函数组件拥有状态。",
+    "content": "Hooks 是 React 16.8 引入的新特性，允许你在不编写 class 的情况下使用 state 和其他 React 特性。\n\n常用 Hooks：\n- useState: 管理组件状态\n- useEffect: 处理副作用\n- useContext: 访问上下文\n- useRef: 获取 DOM 引用\n- useMemo/useCallback: 性能优化\n\n使用规则：\n1. 只在最顶层调用 Hooks\n2. 只在 React 函数中调用 Hooks",
+    "tags": [
+      "编程",
+      "React",
+      "前端"
+    ]
+  },
+  {
+    "id": "3",
+    "title": "Git 工作流最佳实践",
+    "description": "Git 工作流定义了团队使用 Git 进行协作的方式。",
+    "content": "Git 工作流定义了团队使用 Git 进行协作的方式。常见的工作流包括：\n\n1. 集中式工作流\n   所有开发者直接在主分支上工作\n\n2. 功能分支工作流\n   每个新功能创建一个独立分支\n\n3. Gitflow 工作流\n   - main: 生产分支\n   - develop: 开发分支\n   - feature/*: 功能分支\n   - release/*: 发布分支\n   - hotfix/*: 热修复分支\n\n4. Forking 工作流\n   每个开发者 fork 仓库，通过 PR 合并",
+    "tags": [
+      "工具",
+      "Git",
+      "协作"
+    ]
+  },
+  {
+    "id": "1774180494671",
+    "title": "小鸟",
+    "description": "我是一个小小小小鸟",
+    "content": "想要飞却飞呀飞不高",
+    "tags": [
+      "文学"
+    ]
+  }
+]
