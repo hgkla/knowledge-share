@@ -23,13 +23,16 @@
                     <span class="logo-cursor">_</span>
                 </h1>
                 <nav class="nav">
-                    <button id="addBtn" class="btn btn-primary">
+                    <button id="addBtn" class="btn btn-primary" style="display: none;">
                         <span class="icon">+</span> 添加知识
                     </button>
-                    <button id="saveBtn" class="btn btn-success">
+                    <button id="saveBtn" class="btn btn-success" style="display: none;">
                         <span class="icon">☁</span> 保存到云端
                     </button>
-                    <button id="configBtn" class="btn btn-secondary" title="GitHub配置">
+                    <button id="syncBtn" class="btn btn-secondary" style="display: none;">
+                        <span class="icon">↻</span> 同步
+                    </button>
+                    <button id="configBtn" class="btn btn-secondary" title="GitHub配置" style="display: none;">
                         <span class="icon">⚙</span> 配置
                     </button>
                     <button id="exportBtn" class="btn btn-secondary">
@@ -38,6 +41,13 @@
                     <button id="importBtn" class="btn btn-secondary">
                         <span class="icon">↑</span> 导入
                     </button>
+                    <button id="loginBtn" class="btn btn-primary">
+                        <span class="icon">👤</span> 登录
+                    </button>
+                    <button id="logoutBtn" class="btn btn-secondary" style="display: none;">
+                        <span class="icon">⎋</span> 退出
+                    </button>
+                    <span id="userInfo" class="user-info" style="display: none;"></span>
                     <input type="file" id="importFile" accept=".json" style="display: none;">
                 </nav>
             </div>
@@ -152,25 +162,83 @@
                 <div class="form-group">
                     <label for="configToken">Personal Access Token</label>
                     <input type="password" id="configToken" placeholder="ghp_xxxxxxxxxxxx" autocomplete="off">
-                    <small class="form-hint">Token 仅保存在本地，不会上传到任何地方</small>
-                </div>
-                <div class="form-group">
-                    <label for="configOwner">用户名</label>
-                    <input type="text" id="configOwner" placeholder="GitHub 用户名">
-                </div>
-                <div class="form-group">
-                    <label for="configRepo">仓库名</label>
-                    <input type="text" id="configRepo" placeholder="knowledge-share">
-                </div>
-                <div class="form-group">
-                    <label for="configBranch">分支</label>
-                    <input type="text" id="configBranch" placeholder="main" value="main">
+                    <small class="form-hint">Token 将编码后保存到服务器 (仓库: hgkla/knowledge-share)</small>
                 </div>
                 <div class="form-actions">
                     <button type="button" id="configCancel" class="btn btn-secondary">取消</button>
                     <button type="submit" class="btn btn-primary">保存配置</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- 登录/注册模态框 -->
+    <div id="authModal" class="modal modal-auth">
+        <div class="modal-content auth-content">
+            <div class="modal-header">
+                <h2 id="authTitle">用户登录</h2>
+                <button class="modal-close" id="authModalClose">&times;</button>
+            </div>
+            <div class="auth-tabs">
+                <button type="button" class="auth-tab active" data-tab="login">登录</button>
+                <button type="button" class="auth-tab" data-tab="register">注册</button>
+            </div>
+            <form id="loginForm" class="modal-form auth-form active">
+                <div class="form-group">
+                    <label for="loginUsername">用户名</label>
+                    <input type="text" id="loginUsername" required placeholder="请输入用户名">
+                </div>
+                <div class="form-group">
+                    <label for="loginPassword">密码</label>
+                    <input type="password" id="loginPassword" required placeholder="请输入密码">
+                </div>
+                <div class="form-actions">
+                    <button type="button" id="loginCancel" class="btn btn-secondary">取消</button>
+                    <button type="submit" class="btn btn-primary">登录</button>
+                </div>
+            </form>
+            <form id="registerForm" class="modal-form auth-form" style="display: none;">
+                <div class="form-group">
+                    <label for="regUsername">用户名</label>
+                    <input type="text" id="regUsername" required placeholder="请输入用户名">
+                </div>
+                <div class="form-group">
+                    <label for="regPassword">密码</label>
+                    <input type="password" id="regPassword" required placeholder="请输入密码">
+                </div>
+                <div class="form-group">
+                    <label for="regConfirmPassword">确认密码</label>
+                    <input type="password" id="regConfirmPassword" required placeholder="请再次输入密码">
+                </div>
+                <div class="form-hint">注册后需要管理员审核才能使用</div>
+                <div class="form-actions">
+                    <button type="button" id="registerCancel" class="btn btn-secondary">取消</button>
+                    <button type="submit" class="btn btn-primary">注册</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 用户管理模态框（仅管理员可见） -->
+    <div id="adminModal" class="modal modal-admin">
+        <div class="modal-content admin-content">
+            <div class="modal-header">
+                <h2>用户管理</h2>
+                <button class="modal-close" id="adminModalClose">&times;</button>
+            </div>
+            <div class="admin-body">
+                <div id="pendingUsers" class="pending-users">
+                    <h3>待审核用户</h3>
+                    <div id="pendingList" class="user-list"></div>
+                </div>
+                <div id="approvedUsers" class="approved-users">
+                    <h3>已审核用户</h3>
+                    <div id="approvedList" class="user-list"></div>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" id="adminClose" class="btn btn-secondary">关闭</button>
+            </div>
         </div>
     </div>
 

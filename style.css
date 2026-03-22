@@ -634,6 +634,138 @@ body {
     color: var(--text-secondary);
 }
 
+/* User Auth Styles */
+.user-info {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: rgba(0, 212, 255, 0.1);
+    border: 1px solid rgba(0, 212, 255, 0.2);
+    border-radius: 8px;
+    font-size: 0.875rem;
+    color: var(--neon-blue);
+}
+
+.user-info .role-badge {
+    font-size: 0.625rem;
+    padding: 0.125rem 0.375rem;
+    border-radius: 4px;
+    background: var(--neon-purple);
+    color: white;
+}
+
+.user-info .role-badge.admin {
+    background: var(--accent-danger);
+}
+
+/* Auth Modal */
+.auth-content {
+    max-width: 400px;
+}
+
+.auth-tabs {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.auth-tab {
+    padding: 0.75rem 1.5rem;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+}
+
+.auth-tab:hover {
+    color: var(--text-primary);
+}
+
+.auth-tab.active {
+    color: var(--neon-blue);
+    border-bottom-color: var(--neon-blue);
+}
+
+.auth-form {
+    display: none;
+}
+
+.auth-form.active {
+    display: block;
+}
+
+/* Admin Modal */
+.admin-content {
+    max-width: 600px;
+    min-height: 400px;
+}
+
+.admin-body {
+    padding: 1.5rem;
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+.admin-body h3 {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.pending-users, .approved-users {
+    margin-bottom: 1.5rem;
+}
+
+.user-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.user-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    background: rgba(15, 23, 42, 0.5);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+}
+
+.user-item .username {
+    font-weight: 500;
+}
+
+.user-item .user-status {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    background: var(--accent-warning);
+    color: var(--bg-primary);
+}
+
+.user-item .user-status.approved {
+    background: var(--accent-success);
+}
+
+.user-item .user-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.user-item .btn-small {
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+}
+
 .modal-header {
     display: flex;
     justify-content: space-between;

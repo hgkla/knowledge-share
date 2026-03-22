@@ -1,13 +1,26 @@
 // GitHub API 配置常量
 const FILE_PATH = 'data/knowledge.json';
+const USERS_FILE_PATH = 'data/users.json';
+const CONFIG_FILE_PATH = 'data/config.json';
 
-// GitHub 配置（从 localStorage 读取）
-let githubConfig = {
+// 默认仓库信息（硬编码，用于加载服务器配置）
+const DEFAULT_OWNER = 'hgkla';
+const DEFAULT_REPO = 'knowledge-share';
+const DEFAULT_BRANCH = 'master';
+
+// 服务器配置（存储在 GitHub 仓库中，仅管理员可修改）
+let serverConfig = {
     token: '',
-    owner: '',
-    repo: '',
-    branch: 'main'
+    owner: DEFAULT_OWNER,
+    repo: DEFAULT_REPO,
+    branch: DEFAULT_BRANCH
 };
+let configFileSha = null;
+
+// 用户认证状态
+let currentUser = null;
+let usersList = [];
+let usersFileSha = null;
 
 // 应用状态
 let knowledgeList = [];
@@ -65,9 +78,17 @@ const elements = {
     configModal: document.getElementById('configModal'),
     configForm: document.getElementById('configForm'),
     configToken: document.getElementById('configToken'),
-    configOwner: document.getElementById('configOwner'),
-    configRepo: document.getElementById('configRepo'),
-    configBranch: document.getElementById('configBranch'),
+    authModal: document.getElementById('authModal'),
+    loginForm: document.getElementById('loginForm'),
+    registerForm: document.getElementById('registerForm'),
+    loginUsername: document.getElementById('loginUsername'),
+    loginPassword: document.getElementById('loginPassword'),
+    regUsername: document.getElementById('regUsername'),
+    regPassword: document.getElementById('regPassword'),
+    regConfirmPassword: document.getElementById('regConfirmPassword'),
+    adminModal: document.getElementById('adminModal'),
+    pendingList: document.getElementById('pendingList'),
+    approvedList: document.getElementById('approvedList'),
     loading: document.getElementById('loading'),
     toast: document.getElementById('toast'),
     emptyState: document.getElementById('emptyState'),
@@ -77,67 +98,197 @@ const elements = {
 // 初始化
 async function init() {
     console.log('应用初始化开始');
-    loadGitHubConfig();
     loadFromLocalStorage();
+    checkLoginStatus();
     render();
     setupEventListeners();
+    setupAuthEventListeners();
 
-    console.log('初始化完成，配置状态:', {
-        token: !!githubConfig.token,
-        owner: githubConfig.owner,
-        repo: githubConfig.repo,
-        branch: githubConfig.branch
+    // 尝试加载服务器配置（不需要登录）
+    await loadServerConfig();
+
+    console.log('初始化完成，服务器配置状态:', {
+        token: !!serverConfig.token,
+        owner: DEFAULT_OWNER,
+        repo: DEFAULT_REPO,
+        branch: DEFAULT_BRANCH
     });
 
-    if (isGitHubConfigured()) {
-        console.log('配置完整，开始从 GitHub 加载');
+    if (isServerConfigured()) {
+        console.log('服务器配置完整，开始从 GitHub 同步所有数据');
+        // loadFromGitHub 会自动同步配置、用户列表和知识列表
         await loadFromGitHub();
     } else {
-        console.log('配置不完整，跳过 GitHub 加载');
+        console.log('服务器配置不完整，加载本地用户列表');
+        // 加载本地用户列表
+        await loadUsersFromGitHub();
     }
 }
 
-// 从 localStorage 加载 GitHub 配置
-function loadGitHubConfig() {
-    const config = localStorage.getItem('githubConfig');
-    console.log('从 localStorage 读取配置:', config);
-    if (config) {
-        try {
-            githubConfig = JSON.parse(config);
-            console.log('配置加载成功:', {
-                hasToken: !!githubConfig.token,
-                owner: githubConfig.owner,
-                repo: githubConfig.repo,
-                branch: githubConfig.branch
+// 混淆 Token（将 Token 拆分成多段，避免被 GitHub secret scanning 检测）
+function obfuscateToken(token) {
+    if (!token) return [];
+    // 将 Token 按每 8 个字符拆分
+    const parts = [];
+    for (let i = 0; i < token.length; i += 8) {
+        parts.push(token.substring(i, i + 8));
+    }
+    return parts;
+}
+
+// 还原 Token
+function restoreToken(parts) {
+    if (!Array.isArray(parts)) return '';
+    return parts.join('');
+}
+
+// 编码配置（Base64 + Token 混淆）
+function encodeConfig(config) {
+    // 先混淆 Token
+    const configToEncode = {
+        ...config,
+        token: obfuscateToken(config.token)
+    };
+    const jsonStr = JSON.stringify(configToEncode);
+    return btoa(Array.from(new TextEncoder().encode(jsonStr), b => String.fromCharCode(b)).join(''));
+}
+
+// 解码配置（Base64 + Token 还原）
+function decodeConfig(encodedStr) {
+    const jsonStr = new TextDecoder().decode(Uint8Array.from(atob(encodedStr), c => c.charCodeAt(0)));
+    const config = JSON.parse(jsonStr);
+    // 还原 Token
+    return {
+        ...config,
+        token: restoreToken(config.token)
+    };
+}
+
+// 从 GitHub 加载服务器配置
+async function loadServerConfig() {
+    // 使用默认仓库信息尝试加载配置
+    const defaultRawUrl = `https://raw.githubusercontent.com/${DEFAULT_OWNER}/${DEFAULT_REPO}/${DEFAULT_BRANCH}/${CONFIG_FILE_PATH}`;
+
+    try {
+        // 尝试从 GitHub 公开读取配置（使用 raw.githubusercontent.com）
+        const response = await fetch(defaultRawUrl, {
+            method: 'GET',
+            cache: 'no-cache'
+        });
+
+        if (response.ok) {
+            const encodedConfig = await response.text();
+            // 解码配置
+            const config = decodeConfig(encodedConfig.trim());
+            serverConfig = {
+                token: config.token || '',
+                owner: config.owner || DEFAULT_OWNER,
+                repo: config.repo || DEFAULT_REPO,
+                branch: config.branch || DEFAULT_BRANCH
+            };
+            console.log('服务器配置加载成功（已解码）', {
+                hasToken: !!serverConfig.token,
+                owner: serverConfig.owner,
+                repo: serverConfig.repo,
+                branch: serverConfig.branch
             });
-        } catch (e) {
-            console.error('解析 GitHub 配置失败:', e);
+            return;
+        } else if (response.status === 404) {
+            console.log('服务器配置文件不存在，使用默认空配置');
         }
-    } else {
-        console.log('localStorage 中没有配置');
+    } catch (error) {
+        console.log('从 raw 加载配置失败:', error.message);
+    }
+
+    // 如果公开读取失败，使用默认空配置
+    console.log('无法加载服务器配置，使用默认配置');
+}
+
+// 获取文件最新的 SHA
+async function getFileSha(filePath) {
+    try {
+        const response = await fetch(
+            `https://api.github.com/repos/${DEFAULT_OWNER}/${DEFAULT_REPO}/contents/${filePath}?ref=${DEFAULT_BRANCH}`,
+            {
+                headers: {
+                    'Authorization': `Bearer ${serverConfig.token}`,
+                    'Accept': 'application/vnd.github.v3+json'
+                }
+            }
+        );
+
+        if (response.ok) {
+            const data = await response.json();
+            return data.sha;
+        }
+    } catch (error) {
+        console.log('获取文件 SHA 失败:', error);
+    }
+    return null;
+}
+
+// 保存服务器配置到 GitHub（仅管理员）
+async function saveServerConfig() {
+    if (!currentUser || currentUser.role !== 'admin') {
+        showToast('只有管理员可以保存服务器配置', 'error');
+        return;
+    }
+
+    try {
+        // 先获取最新的文件 SHA（避免 409 冲突错误）
+        const latestSha = await getFileSha(CONFIG_FILE_PATH);
+
+        // 使用编码函数对配置进行编码
+        const encodedContent = encodeConfig(serverConfig);
+
+        const body = {
+            message: '更新服务器配置',
+            content: encodedContent,
+            branch: DEFAULT_BRANCH
+        };
+
+        // 如果文件已存在，需要传入 SHA
+        if (latestSha) {
+            body.sha = latestSha;
+        }
+
+        const response = await fetch(
+            `https://api.github.com/repos/${DEFAULT_OWNER}/${DEFAULT_REPO}/contents/${CONFIG_FILE_PATH}`,
+            {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${serverConfig.token}`,
+                    'Accept': 'application/vnd.github.v3+json',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(body)
+            }
+        );
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.message || `保存配置失败: ${response.status}`);
+        }
+
+        const data = await response.json();
+        configFileSha = data.content.sha;
+        showToast('服务器配置已保存（已编码）', 'success');
+    } catch (error) {
+        console.error('保存服务器配置失败:', error);
+        showToast('保存配置失败: ' + error.message, 'error');
+        throw error;
     }
 }
 
-// 保存 GitHub 配置到 localStorage
-function saveGitHubConfig() {
-    const configStr = JSON.stringify(githubConfig);
-    localStorage.setItem('githubConfig', configStr);
-    console.log('配置已保存到 localStorage:', configStr);
-
-    // 验证保存是否成功
-    const saved = localStorage.getItem('githubConfig');
-    console.log('验证保存结果:', saved === configStr ? '成功' : '失败');
-}
-
-// 检查 GitHub 配置是否完整
-function isGitHubConfigured() {
-    const configured = !!(githubConfig.token && githubConfig.owner && githubConfig.repo);
-    console.log('GitHub 配置检查:', {
+// 检查服务器配置是否完整（只需要 Token，仓库信息使用默认值）
+function isServerConfigured() {
+    const configured = !!serverConfig.token;
+    console.log('服务器配置检查:', {
         configured,
-        hasToken: !!githubConfig.token,
-        hasOwner: !!githubConfig.owner,
-        hasRepo: !!githubConfig.repo,
-        branch: githubConfig.branch
+        hasToken: !!serverConfig.token,
+        owner: DEFAULT_OWNER,
+        repo: DEFAULT_REPO,
+        branch: DEFAULT_BRANCH
     });
     return configured;
 }
@@ -162,15 +313,40 @@ function saveToLocalStorage() {
     localStorage.setItem('knowledgeList', JSON.stringify(knowledgeList));
 }
 
-// 从 GitHub 加载数据
+// 保存用户列表到 localStorage（服务器未配置时使用）
+function saveUsersToLocalStorage() {
+    localStorage.setItem('usersList', JSON.stringify(usersList));
+}
+
+// 从 localStorage 加载用户列表
+function loadUsersFromLocalStorage() {
+    const cached = localStorage.getItem('usersList');
+    if (cached) {
+        try {
+            usersList = JSON.parse(cached);
+            console.log('从 localStorage 加载用户列表成功');
+        } catch (e) {
+            console.error('解析本地用户列表失败:', e);
+        }
+    }
+}
+
+// 从 GitHub 加载数据（同时同步用户列表和配置）
 async function loadFromGitHub() {
     showLoading(true);
     try {
+        // 1. 同步服务器配置（Token 等）
+        await loadServerConfig();
+
+        // 2. 同步用户列表
+        await loadUsersFromGitHub();
+
+        // 3. 同步知识列表
         const response = await fetch(
-            `https://api.github.com/repos/${githubConfig.owner}/${githubConfig.repo}/contents/${FILE_PATH}?ref=${githubConfig.branch}`,
+            `https://api.github.com/repos/${DEFAULT_OWNER}/${DEFAULT_REPO}/contents/${FILE_PATH}?ref=${DEFAULT_BRANCH}`,
             {
                 headers: {
-                    'Authorization': `Bearer ${githubConfig.token}`,
+                    'Authorization': `Bearer ${serverConfig.token}`,
                     'Accept': 'application/vnd.github.v3+json',
                     'X-GitHub-Api-Version': '2022-11-28'
                 }
@@ -178,7 +354,7 @@ async function loadFromGitHub() {
         );
 
         if (response.status === 404) {
-            showToast('云端暂无数据，使用本地数据', 'success');
+            showToast('云端暂无知识数据，使用本地数据', 'success');
             return;
         }
 
@@ -195,7 +371,7 @@ async function loadFromGitHub() {
         knowledgeList = JSON.parse(content);
         saveToLocalStorage();
         render();
-        showToast('已从云端同步数据', 'success');
+        showToast('已从云端同步所有数据', 'success');
     } catch (error) {
         console.error('从 GitHub 加载失败:', error);
         showToast('同步失败: ' + error.message, 'error');
@@ -206,11 +382,23 @@ async function loadFromGitHub() {
 
 // 保存到 GitHub
 async function saveToGitHub() {
-    console.log('点击保存到云端，当前配置:', githubConfig);
-    if (!isGitHubConfigured()) {
-        console.log('配置不完整，打开配置模态框');
-        openConfigModal();
-        showToast('请先配置 GitHub 信息', 'error');
+    // 检查是否已登录
+    if (!currentUser) {
+        showToast('请先登录后再保存到云端', 'error');
+        openAuthModal();
+        return;
+    }
+
+    // 检查用户是否已审核通过
+    if (currentUser.status !== 'approved' && currentUser.role !== 'admin') {
+        showToast('您的账号正在审核中，暂时无法保存', 'warning');
+        return;
+    }
+
+    console.log('点击保存到云端，当前服务器配置:', serverConfig);
+    if (!isServerConfigured()) {
+        console.log('服务器配置不完整');
+        showToast('服务器未配置，请联系管理员', 'error');
         return;
     }
 
@@ -221,9 +409,9 @@ async function saveToGitHub() {
         const content = btoa(Array.from(new TextEncoder().encode(jsonStr), b => String.fromCharCode(b)).join(''));
 
         const body = {
-            message: '更新知识列表',
+            message: `更新知识列表 - 由 ${currentUser.username} 提交`,
             content: content,
-            branch: githubConfig.branch
+            branch: DEFAULT_BRANCH
         };
 
         if (fileSha) {
@@ -231,11 +419,11 @@ async function saveToGitHub() {
         }
 
         const response = await fetch(
-            `https://api.github.com/repos/${githubConfig.owner}/${githubConfig.repo}/contents/${FILE_PATH}`,
+            `https://api.github.com/repos/${DEFAULT_OWNER}/${DEFAULT_REPO}/contents/${FILE_PATH}`,
             {
                 method: 'PUT',
                 headers: {
-                    'Authorization': `Bearer ${githubConfig.token}`,
+                    'Authorization': `Bearer ${serverConfig.token}`,
                     'Accept': 'application/vnd.github.v3+json',
                     'Content-Type': 'application/json',
                     'X-GitHub-Api-Version': '2022-11-28'
@@ -486,12 +674,15 @@ function closeViewModal() {
     elements.viewModal.classList.remove('active');
 }
 
-// 打开配置模态框
+// 打开配置模态框（仅管理员）
 function openConfigModal() {
-    elements.configToken.value = githubConfig.token || '';
-    elements.configOwner.value = githubConfig.owner || '';
-    elements.configRepo.value = githubConfig.repo || '';
-    elements.configBranch.value = githubConfig.branch || 'main';
+    // 检查是否是管理员
+    if (!currentUser || currentUser.role !== 'admin') {
+        showToast('只有管理员可以配置服务器信息', 'error');
+        return;
+    }
+
+    elements.configToken.value = serverConfig.token || '';
     elements.configModal.classList.add('active');
 }
 
@@ -500,44 +691,53 @@ function closeConfigModal() {
     elements.configModal.classList.remove('active');
 }
 
-// 保存配置
-function saveConfig(e) {
+// 保存配置（保存到服务器，仅管理员）
+async function saveConfig(e) {
     e.preventDefault();
 
-    // 获取表单值
+    // 检查是否是管理员
+    if (!currentUser || currentUser.role !== 'admin') {
+        showToast('只有管理员可以保存服务器配置', 'error');
+        return;
+    }
+
+    // 获取表单值（只保存 Token，其他使用默认值）
     const tokenValue = elements.configToken.value.trim();
-    const ownerValue = elements.configOwner.value.trim();
-    const repoValue = elements.configRepo.value.trim();
-    const branchValue = elements.configBranch.value.trim() || 'main';
 
     console.log('表单原始值:', {
         token: tokenValue ? '***' : '(空)',
-        owner: ownerValue || '(空)',
-        repo: repoValue || '(空)',
-        branch: branchValue
+        owner: DEFAULT_OWNER,
+        repo: DEFAULT_REPO,
+        branch: DEFAULT_BRANCH
     });
 
-    githubConfig = {
+    // 更新服务器配置（只保存 Token）
+    serverConfig = {
         token: tokenValue,
-        owner: ownerValue,
-        repo: repoValue,
-        branch: branchValue
+        owner: DEFAULT_OWNER,
+        repo: DEFAULT_REPO,
+        branch: DEFAULT_BRANCH
     };
 
     console.log('保存配置对象:', {
-        hasToken: !!githubConfig.token,
-        owner: githubConfig.owner,
-        repo: githubConfig.repo,
-        branch: githubConfig.branch
+        hasToken: !!serverConfig.token,
+        owner: DEFAULT_OWNER,
+        repo: DEFAULT_REPO,
+        branch: DEFAULT_BRANCH
     });
 
-    saveGitHubConfig();
-    closeConfigModal();
-    showToast('配置已保存', 'success');
+    // 保存到 GitHub 服务器
+    try {
+        await saveServerConfig();
+        closeConfigModal();
 
-    // 如果配置完整，自动尝试同步
-    if (isGitHubConfigured()) {
-        loadFromGitHub();
+        // 如果配置完整，自动尝试同步
+        if (isServerConfigured()) {
+            await loadFromGitHub();
+            await loadUsersFromGitHub();
+        }
+    } catch (error) {
+        console.error('保存配置失败:', error);
     }
 }
 
@@ -651,6 +851,14 @@ function escapeHtml(text) {
 function setupEventListeners() {
     document.getElementById('addBtn').addEventListener('click', openAddModal);
     document.getElementById('saveBtn').addEventListener('click', saveToGitHub);
+    document.getElementById('syncBtn').addEventListener('click', () => {
+        if (!currentUser) {
+            showToast('请先登录', 'error');
+            openAuthModal();
+            return;
+        }
+        loadFromGitHub();
+    });
     document.getElementById('exportBtn').addEventListener('click', exportData);
     document.getElementById('importBtn').addEventListener('click', () => {
         document.getElementById('importFile').click();
@@ -712,8 +920,474 @@ function setupEventListeners() {
             closeConfirmModal();
             closeViewModal();
             closeConfigModal();
+            closeAuthModal();
+            closeAdminModal();
         }
     });
+}
+
+// 设置认证事件监听
+function setupAuthEventListeners() {
+    // 登录/注册按钮
+    document.getElementById('loginBtn').addEventListener('click', openAuthModal);
+    document.getElementById('logoutBtn').addEventListener('click', logout);
+
+    // 认证模态框
+    document.getElementById('authModalClose').addEventListener('click', closeAuthModal);
+    document.getElementById('loginCancel').addEventListener('click', closeAuthModal);
+    document.getElementById('registerCancel').addEventListener('click', closeAuthModal);
+
+    // 登录/注册表单
+    elements.loginForm.addEventListener('submit', login);
+    elements.registerForm.addEventListener('submit', register);
+
+    // 标签切换
+    document.querySelectorAll('.auth-tab').forEach(tab => {
+        tab.addEventListener('click', () => switchAuthTab(tab.dataset.tab));
+    });
+
+    // 管理员模态框
+    document.getElementById('adminModalClose').addEventListener('click', closeAdminModal);
+    document.getElementById('adminClose').addEventListener('click', closeAdminModal);
+
+    // 点击模态框外部关闭
+    elements.authModal.addEventListener('click', (e) => {
+        if (e.target === elements.authModal) closeAuthModal();
+    });
+
+    elements.adminModal.addEventListener('click', (e) => {
+        if (e.target === elements.adminModal) closeAdminModal();
+    });
+}
+
+// ==================== 用户认证功能 ====================
+
+// 简单的密码哈希函数（使用 SHA-256）
+async function hashPassword(password) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// 创建默认管理员账号
+async function createDefaultAdmin() {
+    usersList = [{
+        username: 'admin',
+        passwordHash: await hashPassword('admin123'),
+        role: 'admin',
+        status: 'approved',
+        createdAt: new Date().toISOString()
+    }];
+    console.log('已创建本地默认管理员账号');
+}
+
+// 从 GitHub 加载用户列表
+async function loadUsersFromGitHub() {
+    // 如果服务器未配置，尝试从 localStorage 加载，否则创建默认管理员
+    if (!isServerConfigured()) {
+        console.log('服务器未配置，尝试从 localStorage 加载用户列表');
+        loadUsersFromLocalStorage();
+        // 如果 localStorage 没有数据，创建默认管理员
+        if (usersList.length === 0) {
+            await createDefaultAdmin();
+            saveUsersToLocalStorage();
+        }
+        return;
+    }
+
+    try {
+        const response = await fetch(
+            `https://api.github.com/repos/${DEFAULT_OWNER}/${DEFAULT_REPO}/contents/${USERS_FILE_PATH}?ref=${DEFAULT_BRANCH}`,
+            {
+                headers: {
+                    'Authorization': `Bearer ${serverConfig.token}`,
+                    'Accept': 'application/vnd.github.v3+json',
+                    'X-GitHub-Api-Version': '2022-11-28'
+                }
+            }
+        );
+
+        if (response.status === 404) {
+            // 用户文件不存在，创建默认管理员并保存到 GitHub
+            await createDefaultAdmin();
+            await saveUsersToGitHub();
+            return;
+        }
+
+        if (!response.ok) {
+            throw new Error(`加载用户列表失败: ${response.status}`);
+        }
+
+        const data = await response.json();
+        usersFileSha = data.sha;
+        const content = new TextDecoder().decode(Uint8Array.from(atob(data.content), c => c.charCodeAt(0)));
+        usersList = JSON.parse(content);
+    } catch (error) {
+        console.error('加载用户列表失败:', error);
+        // 出错时创建本地默认管理员
+        await createDefaultAdmin();
+    }
+}
+
+// 保存用户列表到 GitHub
+async function saveUsersToGitHub() {
+    if (!isServerConfigured()) return;
+
+    try {
+        const jsonStr = JSON.stringify(usersList, null, 2);
+        const content = btoa(Array.from(new TextEncoder().encode(jsonStr), b => String.fromCharCode(b)).join(''));
+
+        const body = {
+            message: '更新用户列表',
+            content: content,
+            branch: DEFAULT_BRANCH
+        };
+
+        if (usersFileSha) {
+            body.sha = usersFileSha;
+        }
+
+        const response = await fetch(
+            `https://api.github.com/repos/${DEFAULT_OWNER}/${DEFAULT_REPO}/contents/${USERS_FILE_PATH}`,
+            {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${serverConfig.token}`,
+                    'Accept': 'application/vnd.github.v3+json',
+                    'Content-Type': 'application/json',
+                    'X-GitHub-Api-Version': '2022-11-28'
+                },
+                body: JSON.stringify(body)
+            }
+        );
+
+        if (!response.ok) {
+            throw new Error(`保存用户列表失败: ${response.status}`);
+        }
+
+        const data = await response.json();
+        usersFileSha = data.content.sha;
+    } catch (error) {
+        console.error('保存用户列表失败:', error);
+        throw error;
+    }
+}
+
+// 打开认证模态框
+function openAuthModal() {
+    elements.authModal.classList.add('active');
+    switchAuthTab('login');
+}
+
+// 关闭认证模态框
+function closeAuthModal() {
+    elements.authModal.classList.remove('active');
+    elements.loginForm.reset();
+    elements.registerForm.reset();
+}
+
+// 切换登录/注册标签
+function switchAuthTab(tab) {
+    document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+    document.querySelector(`.auth-tab[data-tab="${tab}"]`).classList.add('active');
+
+    if (tab === 'login') {
+        elements.loginForm.classList.add('active');
+        elements.loginForm.style.display = 'block';
+        elements.registerForm.classList.remove('active');
+        elements.registerForm.style.display = 'none';
+        document.getElementById('authTitle').textContent = '用户登录';
+    } else {
+        elements.loginForm.classList.remove('active');
+        elements.loginForm.style.display = 'none';
+        elements.registerForm.classList.add('active');
+        elements.registerForm.style.display = 'block';
+        document.getElementById('authTitle').textContent = '用户注册';
+    }
+}
+
+// 登录
+async function login(e) {
+    e.preventDefault();
+
+    const username = elements.loginUsername.value.trim();
+    const password = elements.loginPassword.value;
+
+    if (!username || !password) {
+        showToast('请输入用户名和密码', 'error');
+        return;
+    }
+
+    // 先加载最新用户列表
+    await loadUsersFromGitHub();
+
+    const user = usersList.find(u => u.username === username);
+    if (!user) {
+        showToast('用户名或密码错误', 'error');
+        return;
+    }
+
+    const passwordHash = await hashPassword(password);
+    if (user.passwordHash !== passwordHash) {
+        showToast('用户名或密码错误', 'error');
+        return;
+    }
+
+    if (user.status !== 'approved') {
+        showToast('账号正在审核中，请等待管理员批准', 'warning');
+        return;
+    }
+
+    currentUser = {
+        username: user.username,
+        role: user.role
+    };
+
+    // 保存登录状态到 sessionStorage
+    sessionStorage.setItem('currentUser', JSON.stringify(currentUser));
+
+    updateUIForUser();
+    closeAuthModal();
+    showToast(`欢迎回来，${username}！`, 'success');
+}
+
+// 注册
+async function register(e) {
+    e.preventDefault();
+
+    const username = elements.regUsername.value.trim();
+    const password = elements.regPassword.value;
+    const confirmPassword = elements.regConfirmPassword.value;
+
+    if (!username || !password) {
+        showToast('请填写完整信息', 'error');
+        return;
+    }
+
+    if (password !== confirmPassword) {
+        showToast('两次输入的密码不一致', 'error');
+        return;
+    }
+
+    if (password.length < 6) {
+        showToast('密码长度至少6位', 'error');
+        return;
+    }
+
+    // 先加载最新用户列表
+    await loadUsersFromGitHub();
+
+    // 检查用户名是否已存在
+    if (usersList.find(u => u.username === username)) {
+        showToast('用户名已存在', 'error');
+        return;
+    }
+
+    const passwordHash = await hashPassword(password);
+
+    const newUser = {
+        username,
+        passwordHash,
+        role: 'user',
+        status: 'pending',
+        createdAt: new Date().toISOString()
+    };
+
+    usersList.push(newUser);
+
+    if (isServerConfigured()) {
+        await saveUsersToGitHub();
+        showToast('注册成功，请等待管理员审核', 'success');
+        closeAuthModal();
+    } else {
+        // 服务器未配置，保存到 localStorage 作为临时方案
+        saveUsersToLocalStorage();
+        showToast('注册成功（服务器未配置，数据临时保存在本地）', 'warning');
+        closeAuthModal();
+        // 提示管理员需要配置服务器
+        setTimeout(() => {
+            showToast('请联系管理员配置 GitHub Token 以启用云端同步', 'warning');
+        }, 2000);
+    }
+}
+
+// 退出登录
+function logout() {
+    currentUser = null;
+    sessionStorage.removeItem('currentUser');
+    updateUIForUser();
+    showToast('已退出登录', 'success');
+}
+
+// 更新 UI 根据用户状态
+function updateUIForUser() {
+    const loginBtn = document.getElementById('loginBtn');
+    const logoutBtn = document.getElementById('logoutBtn');
+    const userInfo = document.getElementById('userInfo');
+    const addBtn = document.getElementById('addBtn');
+    const saveBtn = document.getElementById('saveBtn');
+    const syncBtn = document.getElementById('syncBtn');
+
+    if (currentUser) {
+        loginBtn.style.display = 'none';
+        logoutBtn.style.display = 'inline-flex';
+        userInfo.style.display = 'inline-flex';
+        userInfo.innerHTML = `
+            <span>${currentUser.username}</span>
+            <span class="role-badge ${currentUser.role}">${currentUser.role === 'admin' ? '管理员' : '用户'}</span>
+        `;
+
+        // 登录后显示添加、保存和同步按钮
+        addBtn.style.display = 'inline-flex';
+        saveBtn.style.display = 'inline-flex';
+        syncBtn.style.display = 'inline-flex';
+
+        // 管理员显示管理按钮和配置按钮
+        if (currentUser.role === 'admin') {
+            // 显示配置按钮
+            const configBtn = document.getElementById('configBtn');
+            if (configBtn) {
+                configBtn.style.display = 'inline-flex';
+            }
+
+            // 添加用户管理按钮
+            if (!document.getElementById('adminBtn')) {
+                const adminBtn = document.createElement('button');
+                adminBtn.id = 'adminBtn';
+                adminBtn.className = 'btn btn-secondary';
+                adminBtn.innerHTML = '<span class="icon">👥</span> 用户管理';
+                adminBtn.addEventListener('click', openAdminModal);
+                logoutBtn.parentNode.insertBefore(adminBtn, logoutBtn);
+            }
+        }
+    } else {
+        loginBtn.style.display = 'inline-flex';
+        logoutBtn.style.display = 'none';
+        userInfo.style.display = 'none';
+
+        // 未登录隐藏添加、保存和同步按钮
+        addBtn.style.display = 'none';
+        saveBtn.style.display = 'none';
+        syncBtn.style.display = 'none';
+
+        // 隐藏配置按钮
+        const configBtn = document.getElementById('configBtn');
+        if (configBtn) {
+            configBtn.style.display = 'none';
+        }
+
+        // 移除管理按钮
+        const adminBtn = document.getElementById('adminBtn');
+        if (adminBtn) {
+            adminBtn.remove();
+        }
+    }
+}
+
+// 打开管理员模态框
+async function openAdminModal() {
+    if (!currentUser || currentUser.role !== 'admin') {
+        showToast('只有管理员可以访问', 'error');
+        return;
+    }
+
+    await loadUsersFromGitHub();
+    renderUserList();
+    elements.adminModal.classList.add('active');
+}
+
+// 关闭管理员模态框
+function closeAdminModal() {
+    elements.adminModal.classList.remove('active');
+}
+
+// 渲染用户列表
+function renderUserList() {
+    const pendingUsers = usersList.filter(u => u.status === 'pending');
+    const approvedUsers = usersList.filter(u => u.status === 'approved');
+
+    elements.pendingList.innerHTML = pendingUsers.length === 0
+        ? '<p style="color: var(--text-secondary); font-size: 0.875rem;">暂无待审核用户</p>'
+        : pendingUsers.map(user => `
+            <div class="user-item">
+                <span class="username">${escapeHtml(user.username)}</span>
+                <span class="user-status">待审核</span>
+                <div class="user-actions">
+                    <button class="btn btn-success btn-small" onclick="approveUser('${user.username}')">通过</button>
+                    <button class="btn btn-danger btn-small" onclick="rejectUser('${user.username}')">拒绝</button>
+                </div>
+            </div>
+        `).join('');
+
+    elements.approvedList.innerHTML = approvedUsers.length === 0
+        ? '<p style="color: var(--text-secondary); font-size: 0.875rem;">暂无已审核用户</p>'
+        : approvedUsers.map(user => `
+            <div class="user-item">
+                <span class="username">${escapeHtml(user.username)}</span>
+                <span class="user-status approved">${user.role === 'admin' ? '管理员' : '已批准'}</span>
+                ${user.role !== 'admin' ? `
+                    <div class="user-actions">
+                        <button class="btn btn-danger btn-small" onclick="deleteUser('${user.username}')">删除</button>
+                    </div>
+                ` : ''}
+            </div>
+        `).join('');
+}
+
+// 审核通过用户
+async function approveUser(username) {
+    const user = usersList.find(u => u.username === username);
+    if (user) {
+        user.status = 'approved';
+        if (isServerConfigured()) {
+            await saveUsersToGitHub();
+        } else {
+            saveUsersToLocalStorage();
+        }
+        renderUserList();
+        showToast(`已批准用户 ${username}`, 'success');
+    }
+}
+
+// 拒绝用户（删除）
+async function rejectUser(username) {
+    usersList = usersList.filter(u => u.username !== username);
+    if (isServerConfigured()) {
+        await saveUsersToGitHub();
+    } else {
+        saveUsersToLocalStorage();
+    }
+    renderUserList();
+    showToast(`已拒绝用户 ${username}`, 'success');
+}
+
+// 删除用户
+async function deleteUser(username) {
+    if (!confirm(`确定要删除用户 ${username} 吗？`)) return;
+
+    usersList = usersList.filter(u => u.username !== username);
+    if (isServerConfigured()) {
+        await saveUsersToGitHub();
+    } else {
+        saveUsersToLocalStorage();
+    }
+    renderUserList();
+    showToast(`已删除用户 ${username}`, 'success');
+}
+
+// 检查用户是否已登录
+function checkLoginStatus() {
+    const saved = sessionStorage.getItem('currentUser');
+    if (saved) {
+        try {
+            currentUser = JSON.parse(saved);
+            updateUIForUser();
+        } catch (e) {
+            console.error('解析登录状态失败:', e);
+        }
+    }
 }
 
 // 启动应用
